@@ -1,0 +1,627 @@
+Option Explicit
+
+Public Sub MonteCarloSim()
+
+Application.ScreenUpdating = False
+
+'General variables
+Dim LastRow As Integer, ws As Worksheet, counter As Long, chartCount As Integer, impliedFX As Double
+
+'Condidence interval variables
+Dim stDevC As Double, stDevP As Double, CFC_L As Double, CFC_U As Double, CFP_L As Double, CFP_U As Double
+
+'Loop variables
+Dim Sim As Integer, Day As Long, S As Series
+
+'Simulation variables
+Dim timeStep As Single, numDays As Double, numOfSimulations As Double, randomVariable As Double
+
+'FX parameter variables
+Dim spotPrice As Double, spotPrice2 As Double, spotPrice3 As Double, volatility As Double, volatility2 As Double
+Dim drift As Double, ExpRk As Double, ExpRkVChange As Double
+
+'Option parameters
+Dim maturity As Double, strikePrice As Double, interestRateD As Double, interestRateF As Double, optValueCall As Double
+Dim optValuePut As Double, optValueSpotChangeCall As Double, optValueSpotChangeCall2 As Double, optValueSpotChangePut As Double
+Dim optValueVolChange As Double, optValueSpotChangePut2 As Double, ert As Double, eqt As Double
+
+'MCS greeks variables
+Dim DeltaMCSC As Double, DeltaMCSC2 As Double, DeltaMCSP As Double, DeltaMCSP2 As Double, VegaMCS As Double, GammaMCS As Double
+
+'Array variables
+Dim xValueAxis() As Double, terminalStockValues() As Double, callOptPayout() As Double, putOptPayout() As Double
+Dim callOptPayoutSChange() As Double, callOptPayoutVChange() As Double, callOptPayoutSChange2() As Double, putOptPayoutSChange() As Double, putOptPayoutSChange2() As Double
+Dim stockPricesMCS() As Double, stockPricesALL() As Double, stockPrice() As Double
+Dim stockPricesVolChange() As Double, stockPricesSpotChange() As Double, stockPricesSpotChange2() As Double
+
+'''Assign values to general variables
+Set ws = Worksheets("Monte Carlo")
+LastRow = ws.Cells(Rows.Count, "A").End(xlUp).Row
+chartCount = ActiveSheet.ChartObjects.Count
+
+'''Assign values to stock parameter variables
+spotPrice = ws.Range("B4").value
+spotPrice2 = ws.Range("B4").value * (1 + ws.Range("B36").value)
+spotPrice3 = ws.Range("B4").value * (1 - ws.Range("B36").value)
+timeStep = ws.Range("B5").value
+drift = ws.Range("B6")
+volatility = ws.Range("B7").value
+volatility2 = ws.Range("B7").value + ws.Range("B37").value
+numOfSimulations = ws.Range("B10").value
+strikePrice = ws.Range("B13").value
+maturity = ws.Range("B14").value
+interestRateD = ws.Range("B15").value
+interestRateF = ws.Range("B16").value
+ExpRk = drift - volatility ^ 2 / 2
+ExpRkVChange = drift - volatility2 ^ 2 / 2
+numDays = 252
+eqt = Exp(-interestRateF * maturity)
+ert = Exp(-interestRateD * maturity)
+
+'''Redimention the arrays that were declared earlier to appropriate sizes
+ReDim terminalStockValues(0 To numOfSimulations - 1)
+ReDim xValueAxis(0 To numDays - 1)
+'Stock prices for spot
+ReDim stockPrice(0 To numDays - 1)
+ReDim stockPricesALL(0 To (numDays * numOfSimulations) - 1)
+ReDim stockPricesMCS(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Stock prices for spot increase 1%
+ReDim stockPricesSpotChange(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Stock prices for spot decrease 1%
+ReDim stockPricesSpotChange2(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Stock prices for volatility increase 1%
+ReDim stockPricesVolChange(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Payoffs for spot
+ReDim callOptPayout(0 To numOfSimulations - 1)
+ReDim putOptPayout(0 To numOfSimulations - 1)
+'Payoffs for spot increase 1%
+ReDim callOptPayoutSChange(0 To numOfSimulations - 1)
+ReDim putOptPayoutSChange(0 To numOfSimulations - 1)
+'Payoffs for spot decrease 1%
+ReDim callOptPayoutSChange2(0 To numOfSimulations - 1)
+ReDim putOptPayoutSChange2(0 To numOfSimulations - 1)
+'Payoffs for volatility incease 1%
+ReDim callOptPayoutVChange(0 To numOfSimulations - 1)
+
+               
+If chartCount > 0 Then
+    Do Until chartCount = 0
+        ActiveSheet.ChartObjects(1).Delete
+        chartCount = ActiveSheet.ChartObjects.Count
+    Loop
+End If
+        
+Call createPriceChart
+    
+For Sim = 0 To numOfSimulations - 1
+    For Day = 0 To numDays - 1
+        If (Day = 0) Then
+            'Spot path
+            stockPricesMCS(Sim, Day) = spotPrice
+            'Spot increase 1% path
+            stockPricesSpotChange(Sim, Day) = spotPrice2
+            'Spot decrease 1% path
+            stockPricesSpotChange2(Sim, Day) = spotPrice3
+            'Volatility increase 1% path
+            stockPricesVolChange(Sim, Day) = spotPrice
+            'For Graph
+            stockPrice(Day) = spotPrice
+            xValueAxis(Day) = timeStep * Day
+            stockPricesALL(counter) = stockPrice(Day)
+            counter = counter + 1
+                GoTo nextSimDay
+        End If
+                randomVariable = WorksheetFunction.NormSInv(Rnd())
+                'Spot path
+                stockPricesMCS(Sim, Day) = stockPricesMCS(Sim, Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                'Spot incease 1% path
+                stockPricesSpotChange(Sim, Day) = stockPricesSpotChange(Sim, Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                'Spot decrease 1% path
+                stockPricesSpotChange2(Sim, Day) = stockPricesSpotChange2(Sim, Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                'Volatility increase 1% path
+                stockPricesVolChange(Sim, Day) = stockPricesVolChange(Sim, Day - 1) * Exp((ExpRkVChange * (timeStep / numDays)) + (volatility2 * randomVariable * Sqr(timeStep / numDays)))
+                'For Graph
+                stockPrice(Day) = stockPrice(Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                xValueAxis(Day) = timeStep * Day
+                stockPricesALL(counter) = stockPrice(Day)
+                counter = counter + 1
+nextSimDay:
+    Next Day
+    
+If Sim < 255 Then
+    With ActiveChart
+        Set S = .SeriesCollection.NewSeries
+            With S
+                .XValues = xValueAxis
+                .Values = stockPrice
+            End With
+        
+    End With
+End If
+
+'MCS payoffs for spot path
+callOptPayout(Sim) = Application.Max((stockPricesMCS(Sim, Day - (maturity * numDays)) * eqt) - (strikePrice * ert), 0)
+putOptPayout(Sim) = Application.Max((strikePrice * ert) - (stockPricesMCS(Sim, Day - (maturity * numDays)) * eqt), 0)
+'MCS payoffs for spot increase 1% path
+callOptPayoutSChange(Sim) = Application.Max((stockPricesSpotChange(Sim, Day - (maturity * numDays)) * eqt) - (strikePrice * ert), 0)
+putOptPayoutSChange(Sim) = Application.Max((strikePrice * ert) - (stockPricesSpotChange(Sim, Day - (maturity * numDays)) * eqt), 0)
+'MCS payoffs for spot decrease 1% path
+callOptPayoutSChange2(Sim) = Application.Max((stockPricesSpotChange2(Sim, Day - (maturity * numDays)) * eqt) - (strikePrice * ert), 0)
+putOptPayoutSChange2(Sim) = Application.Max((strikePrice * ert) - (stockPricesSpotChange2(Sim, Day - (maturity * numDays)) * eqt), 0)
+'MCS payoffs for volatility increase 1% path
+callOptPayoutVChange(Sim) = Application.Max((stockPricesVolChange(Sim, Day - (maturity * numDays)) * eqt) - (strikePrice * ert), 0)
+'Record last day's stock price for implied forward rate calculation
+terminalStockValues(Sim) = stockPrice(Day - 1)
+
+Next Sim
+
+'MCS values for spot path
+optValueCall = WorksheetFunction.Average(callOptPayout)
+optValuePut = WorksheetFunction.Average(putOptPayout)
+ws.Range("B20").value = optValueCall
+ws.Range("C20").value = optValuePut
+'MCS values for spot increase 1%
+optValueSpotChangeCall = WorksheetFunction.Average(callOptPayoutSChange)
+optValueSpotChangePut = WorksheetFunction.Average(putOptPayoutSChange)
+'MCS values for spot decrease 1%
+optValueSpotChangeCall2 = WorksheetFunction.Average(callOptPayoutSChange2)
+optValueSpotChangePut2 = WorksheetFunction.Average(putOptPayoutSChange2)
+'MCS values for volatility increase 1%
+optValueVolChange = WorksheetFunction.Average(callOptPayoutVChange)
+        
+'MCS Greeks
+DeltaMCSC = (optValueSpotChangeCall - optValueCall) / ws.Range("B36").value
+DeltaMCSC2 = (optValueSpotChangeCall2 - optValueCall) / -ws.Range("B36").value
+DeltaMCSP = (optValueSpotChangePut - optValuePut) / ws.Range("B36").value
+DeltaMCSP2 = (optValueSpotChangePut2 - optValuePut) / -ws.Range("B36").value
+VegaMCS = (optValueVolChange - optValueCall) / ws.Range("B37").value
+GammaMCS = (optValueSpotChangeCall - (2 * optValueCall) + optValueSpotChangeCall2) / (ws.Range("B36").value ^ 2)
+ws.Range("B21").value = WorksheetFunction.Min(DeltaMCSC, DeltaMCSC2)
+ws.Range("C21").value = WorksheetFunction.Max(DeltaMCSP, DeltaMCSP2)
+ws.Range("B22").value = GammaMCS
+ws.Range("C22").value = GammaMCS
+ws.Range("B23").value = VegaMCS
+ws.Range("C23").value = VegaMCS
+
+'Confidence intervals
+stDevC = WorksheetFunction.StDev_S(callOptPayout)
+stDevP = WorksheetFunction.StDev_S(putOptPayout)
+CFC_L = optValueCall - ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevC) / Sqr(numOfSimulations))
+CFC_U = optValueCall + ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevC) / Sqr(numOfSimulations))
+CFP_L = optValuePut - ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevP) / Sqr(numOfSimulations))
+CFP_U = optValuePut + ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevP) / Sqr(numOfSimulations))
+ws.Range("B24").value = CFC_L
+ws.Range("B25").value = CFC_U
+ws.Range("C24").value = CFP_L
+ws.Range("C25").value = CFP_U
+
+'Implied forward rate & difference between actual and implied
+impliedFX = (WorksheetFunction.Average(terminalStockValues) / spotPrice) - 1
+ws.Range("B33").value = impliedFX
+ws.Range("B34").value = ws.Range("B6").value - impliedFX
+
+'Resize and reposition the price movement chart
+ActiveSheet.ChartObjects(1).Activate
+With ActiveSheet.ChartObjects(1)
+    .Left = Range("F2").Left + 10
+    .Top = Range("F2").Top + 5
+    .Width = 800
+    .Height = 400
+        With ActiveChart
+            'Adjust min and max for y-axis and the number format for x-axis
+            .Axes(xlValue).MinimumScale = Application.Min(stockPricesALL) - (0.1 * Application.Min(stockPricesALL))
+            .Axes(xlValue).MaximumScale = Application.Max(stockPricesALL) + (0.1 * Application.Max(stockPricesALL))
+            .Axes(xlValue).TickLabels.NumberFormat = "#,##0.00"
+            .Axes(xlCategory).TickLabels.NumberFormat = "0"
+        End With
+End With
+
+counter = 0
+
+Application.ScreenUpdating = True
+
+End Sub
+
+Public Sub MonteCarloSimExotic()
+
+Application.ScreenUpdating = False
+
+'''General variables
+Dim LastRow As Integer, ws As Worksheet, counter As Long, chartCount As Integer, impliedFX As Double
+Dim indicator As Integer, barrier As Double
+
+'''Confidence interval variables
+Dim stDevC As Double, stDevP As Double, CFC_L As Double, CFC_U As Double, CFP_L As Double, CFP_U As Double
+
+'''Loop variables
+Dim Sim As Integer, Day As Long, S As Series, check As Long
+
+'''Simulation variables
+Dim timeStep As Single, numDays As Double, numOfSimulations As Double, randomVariable As Double
+
+'''Stock parameter variables
+Dim spotPrice As Double, spotPrice2 As Double, spotPrice3 As Double, drift As Double
+Dim volatility As Double, volatility2 As Double, ExpRk As Double, ExpRkVChange As Double
+Dim maturity As Double, strikePrice As Double, interestRateD As Double, interestRateF As Double
+
+'''MCS greeks variables
+Dim DeltaMCSC As Double, DeltaMCSC2 As Double, DeltaMCSP As Double, DeltaMCSP2 As Double
+Dim VegaMCS As Double, GammaMCS As Double
+Dim valueMCSCspotChange As Double, valueMCSCspotChange2 As Double, valueMCSPspotChange As Double
+Dim valueMCSPspotChange2 As Double, valueMCSvolChange As Double, valueMCSC As Double, valueMCSP As Double
+
+'''Array variables
+Dim xValueAxis() As Double, terminalStockValues() As Double
+Dim callOptPayout() As Double, putOptPayout() As Double
+Dim callOptPayoutSChange() As Double, putOptPayoutSChange() As Double, callOptPayoutVChange() As Double
+Dim stockPrice() As Double, stockPricesALL() As Double, stockPricesMCS() As Double
+Dim stockPricesSpotChange() As Double, stockPricesSpotChange2() As Double, stockPricesVolChange() As Double
+'American option payoffs
+Dim callOpt() As Double, putOpt() As Double, callOptS() As Double, putOptS() As Double, callOptV() As Double
+Dim callOptPayoutSChange2() As Double, putOptPayoutSChange2() As Double, callOptS2() As Double, putOptS2() As Double
+    
+'''Assign values to general variables
+Set ws = Worksheets("Monte Carlo")
+LastRow = ws.Cells(Rows.Count, "A").End(xlUp).Row
+chartCount = ActiveSheet.ChartObjects.Count
+
+'''Assign values to stock parameter variables
+spotPrice = ws.Range("B4").value
+spotPrice2 = ws.Range("B4").value * (1 + ws.Range("B36").value)
+spotPrice3 = ws.Range("B4").value * (1 - ws.Range("B36").value)
+timeStep = ws.Range("B5").value
+drift = ws.Range("B6")
+volatility = ws.Range("B7").value
+volatility2 = ws.Range("B7").value + ws.Range("B37").value
+numOfSimulations = ws.Range("B10").value
+strikePrice = ws.Range("B13").value
+maturity = ws.Range("B14").value
+interestRateD = ws.Range("B15").value
+interestRateF = ws.Range("B16").value
+ExpRk = drift - volatility ^ 2 / 2
+ExpRkVChange = drift - volatility2 ^ 2 / 2
+numDays = 252
+barrier = ws.Range("B38").value
+
+'''Redimention the arrays that were declared earlier to appropriate sizes
+ReDim xValueAxis(0 To numDays - 1)
+ReDim terminalStockValues(0 To numOfSimulations - 1)
+'Stock prices for spot
+ReDim stockPrice(0 To numDays - 1)
+ReDim stockPricesALL(0 To (numDays * numOfSimulations) - 1)
+ReDim stockPricesMCS(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Stock prices for spot increase 1%
+ReDim stockPricesSpotChange(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Stock prices for spot decrease 1%
+ReDim stockPricesSpotChange2(0 To numOfSimulations - 1, 0 To numDays - 1)
+'Stock prices for volatility increase 1%
+ReDim stockPricesVolChange(0 To numOfSimulations - 1, 0 To numDays - 1)
+'MCS Values for spot
+ReDim callOptPayout(0 To numOfSimulations - 1)
+ReDim putOptPayout(0 To numOfSimulations - 1)
+'MCS values for spot increase 1%
+ReDim callOptPayoutSChange(0 To numOfSimulations - 1)
+ReDim putOptPayoutSChange(0 To numOfSimulations - 1)
+'MCS values for spot decrease 1%
+ReDim callOptPayoutSChange2(0 To numOfSimulations - 1)
+ReDim putOptPayoutSChange2(0 To numOfSimulations - 1)
+'MCS values for volatility increase 1%
+ReDim callOptPayoutVChange(0 To numOfSimulations - 1)
+'Payoffs for spot
+ReDim callOpt(0 To numDays - 1)
+ReDim putOpt(0 To numDays - 1)
+'Payoffs for spot increase 1%
+ReDim callOptS(0 To numDays - 1)
+ReDim putOptS(0 To numDays - 1)
+'Payoffs for spot decrease 1%
+ReDim callOptS2(0 To numDays - 1)
+ReDim putOptS2(0 To numDays - 1)
+'Payoffs for volatility increase 1%
+ReDim callOptV(0 To numDays - 1)
+               
+If chartCount > 0 Then
+    Do Until chartCount = 0
+        ActiveSheet.ChartObjects(1).Delete
+        chartCount = ActiveSheet.ChartObjects.Count
+    Loop
+End If
+        
+Call createPriceChart
+    
+For Sim = 0 To numOfSimulations - 1
+    For Day = 0 To numDays - 1
+        If (Day = 0) Then
+            'Spot path
+            stockPricesMCS(Sim, Day) = spotPrice
+            'Spot increase 1% path
+            stockPricesSpotChange(Sim, Day) = spotPrice2
+            'Spot decrease 1% path
+            stockPricesSpotChange2(Sim, Day) = spotPrice3
+            'Volatility increase 1% path
+            stockPricesVolChange(Sim, Day) = spotPrice
+            'For Graph
+            stockPrice(Day) = spotPrice
+            xValueAxis(Day) = timeStep * Day
+            stockPricesALL(counter) = stockPrice(Day)
+            counter = counter + 1
+                GoTo nextSimDay
+        End If
+                randomVariable = WorksheetFunction.NormSInv(Rnd())
+                'Spot path
+                stockPricesMCS(Sim, Day) = stockPricesMCS(Sim, Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                'Spot incease 1% path
+                stockPricesSpotChange(Sim, Day) = stockPricesSpotChange(Sim, Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                'Spot decrease 1% path
+                stockPricesSpotChange2(Sim, Day) = stockPricesSpotChange2(Sim, Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                'Volatility increase 1% path
+                stockPricesVolChange(Sim, Day) = stockPricesVolChange(Sim, Day - 1) * Exp((ExpRkVChange * (timeStep / numDays)) + (volatility2 * randomVariable * Sqr(timeStep / numDays)))
+                'For Graph
+                stockPrice(Day) = stockPrice(Day - 1) * Exp((ExpRk * (timeStep / numDays)) + (volatility * randomVariable * Sqr(timeStep / numDays)))
+                xValueAxis(Day) = timeStep * Day
+                stockPricesALL(counter) = stockPrice(Day)
+                counter = counter + 1
+nextSimDay:
+    Next Day
+    
+If Sim < 255 Then
+    With ActiveChart
+        Set S = .SeriesCollection.NewSeries
+            With S
+                .XValues = xValueAxis
+                .Values = stockPrice
+            End With
+        
+    End With
+End If
+
+'American style options can be exercised at any time therefore need to loop
+'through each day and compute discounted payoff
+For check = 0 To (numDays * maturity)
+    'Barrier option payoff
+    If (stockPrice(check) < barrier) Then
+        'Payoffs for spot
+        callOpt(check) = Application.Max((stockPricesMCS(Sim, check) * Exp(-interestRateF * maturity)) - (strikePrice * Exp(-interestRateD * maturity)), 0)
+        putOpt(check) = Application.Max((strikePrice * Exp(-interestRateD * maturity)) - (stockPricesMCS(Sim, check) * Exp(-interestRateF * maturity)), 0)
+        'Payoffs for spot increase 1%
+        callOptS(check) = Application.Max((stockPricesSpotChange(Sim, check) * Exp(-interestRateF * maturity)) - (strikePrice * Exp(-interestRateD * maturity)), 0)
+        putOptS(check) = Application.Max((strikePrice * Exp(-interestRateD * maturity)) - (stockPricesSpotChange(Sim, check) * Exp(-interestRateF * maturity)), 0)
+        'Payoffs for spot decrease 1%
+        callOptS2(check) = Application.Max((stockPricesSpotChange2(Sim, check) * Exp(-interestRateF * maturity)) - (strikePrice * Exp(-interestRateD * maturity)), 0)
+        putOptS2(check) = Application.Max((strikePrice * Exp(-interestRateD * maturity)) - (stockPricesSpotChange2(Sim, check) * Exp(-interestRateF * maturity)), 0)
+        'Payoff for volatility increase 1%
+        callOptV(check) = Application.Max((stockPricesVolChange(Sim, check) * Exp(-interestRateF * maturity)) - (strikePrice * Exp(-interestRateD * maturity)), 0)
+        indicator = 1
+    Else
+        'Expires worthless if barrier is hit
+        callOptPayout(Sim) = 0
+        putOptPayout(Sim) = 0
+        callOptPayoutSChange(Sim) = 0
+        putOptPayoutSChange(Sim) = 0
+        callOptPayoutSChange2(Sim) = 0
+        putOptPayoutSChange2(Sim) = 0
+        callOptPayoutVChange(Sim) = 0
+        indicator = 0
+        GoTo opt
+    End If
+Next check
+
+opt:
+
+If (indicator = 1) Then
+    'MCS values for spot
+    callOptPayout(Sim) = WorksheetFunction.Max(callOpt)
+    putOptPayout(Sim) = WorksheetFunction.Max(putOpt)
+    'MCS values for spot increase 1%
+    callOptPayoutSChange(Sim) = WorksheetFunction.Max(callOptS)
+    putOptPayoutSChange(Sim) = WorksheetFunction.Max(putOptS)
+    'MCS values for spot decrease 1%
+    callOptPayoutSChange2(Sim) = WorksheetFunction.Max(callOptS2)
+    putOptPayoutSChange2(Sim) = WorksheetFunction.Max(putOptS2)
+    'MCS values for volatility increaes 1%
+    callOptPayoutVChange(Sim) = WorksheetFunction.Max(callOptV)
+End If
+
+'Record last day's stock price for implied forward rate calculation
+terminalStockValues(Sim) = stockPrice(Day - 1)
+
+Next Sim
+
+'MCS values for spot
+valueMCSC = WorksheetFunction.Average(callOptPayout)
+valueMCSP = WorksheetFunction.Average(putOptPayout)
+ws.Range("B20").value = valueMCSC
+ws.Range("C20").value = valueMCSP
+'MCS values for spot increase 1%
+valueMCSCspotChange = WorksheetFunction.Average(callOptPayoutSChange)
+valueMCSPspotChange = WorksheetFunction.Average(putOptPayoutSChange)
+'MCS values for spot decrease 1%
+valueMCSCspotChange2 = WorksheetFunction.Average(callOptPayoutSChange2)
+valueMCSPspotChange2 = WorksheetFunction.Average(putOptPayoutSChange2)
+'MCS values for volatility increase 1%
+valueMCSvolChange = WorksheetFunction.Average(callOptPayoutVChange)
+
+'MCS Greeks
+DeltaMCSC = (valueMCSCspotChange - valueMCSC) / ws.Range("B36").value
+DeltaMCSC2 = (valueMCSCspotChange2 - valueMCSC) / -ws.Range("B36").value
+DeltaMCSP = (valueMCSPspotChange - valueMCSP) / ws.Range("B36").value
+DeltaMCSP2 = (valueMCSPspotChange2 - valueMCSP) / -ws.Range("B36").value
+VegaMCS = (valueMCSvolChange - valueMCSC) / ws.Range("B37").value
+GammaMCS = (valueMCSCspotChange - (2 * valueMCSC) + valueMCSCspotChange2) / (ws.Range("B36").value ^ 2)
+ws.Range("B21").value = WorksheetFunction.Min(DeltaMCSC, DeltaMCSC2)
+ws.Range("C21").value = WorksheetFunction.Max(DeltaMCSP, DeltaMCSP2)
+ws.Range("B22").value = GammaMCS
+ws.Range("C22").value = GammaMCS
+ws.Range("B23").value = VegaMCS
+ws.Range("C23").value = VegaMCS
+
+'Confidence intervals
+stDevC = WorksheetFunction.StDev_S(callOptPayout)
+stDevP = WorksheetFunction.StDev_S(putOptPayout)
+CFC_L = valueMCSC - ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevC) / Sqr(numOfSimulations))
+CFC_U = valueMCSC + ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevC) / Sqr(numOfSimulations))
+CFP_L = valueMCSP - ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevP) / Sqr(numOfSimulations))
+CFP_U = valueMCSP + ((WorksheetFunction.NormSInv(1 - ws.Range("B17").value) * stDevP) / Sqr(numOfSimulations))
+ws.Range("B24").value = CFC_L
+ws.Range("B25").value = CFC_U
+ws.Range("C24").value = CFP_L
+ws.Range("C25").value = CFP_U
+
+'Implied forward rate & difference between actual and implied
+impliedFX = (WorksheetFunction.Average(terminalStockValues) / spotPrice) - 1
+ws.Range("B33").value = impliedFX
+ws.Range("B34").value = ws.Range("B6").value - impliedFX
+
+'Resize and reposition the price movement chart
+ActiveSheet.ChartObjects(1).Activate
+With ActiveSheet.ChartObjects(1)
+    .Left = Range("F2").Left + 10
+    .Top = Range("F2").Top + 5
+    .Width = 800
+    .Height = 400
+        With ActiveChart
+            'Adjust min and max for y-axis and the number format for x-axis
+            .Axes(xlValue).MinimumScale = Application.Min(stockPricesALL) - (0.1 * Application.Min(stockPricesALL))
+            .Axes(xlValue).MaximumScale = Application.Max(stockPricesALL) + (0.1 * Application.Max(stockPricesALL))
+            .Axes(xlValue).TickLabels.NumberFormat = "#,##0.00"
+            .Axes(xlCategory).TickLabels.NumberFormat = "0"
+        End With
+End With
+
+counter = 0
+
+Application.ScreenUpdating = True
+
+End Sub
+
+Sub clearSheet()
+
+Application.ScreenUpdating = False
+
+Dim LastRow As Long
+LastRow = ActiveSheet.Cells(Rows.Count, "C").End(xlUp).Row
+
+If LastRow <> 18 Then
+    ActiveSheet.Range("B20:C25").ClearContents
+    ActiveSheet.Range("B28:C31").ClearContents
+    ActiveSheet.Range("B33:B34").ClearContents
+End If
+
+Do
+    On Error GoTo endsub
+    ActiveSheet.ChartObjects(1).Delete
+Loop
+
+endsub:
+
+Application.ScreenUpdating = True
+
+End Sub
+
+Sub createPriceChart()
+
+Application.ScreenUpdating = False
+
+ActiveSheet.Shapes.AddChart2(227, xlLine).Select
+    With ActiveChart
+        .ClearToMatchColorStyle
+        .ChartStyle = 232
+        .HasTitle = True
+        .ChartTitle.Text = "Daily Price Movement"
+        .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.Visible = msoTrue
+        .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.ForeColor.ObjectThemeColor = msoThemeColorAccent1
+        .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.ForeColor.TintAndShade = 0
+        .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.ForeColor.Brightness = -0.5
+        .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.Transparency = 0
+        .ChartTitle.Format.TextFrame2.TextRange.Font.Fill.Solid
+        .ChartArea.Format.Line.Visible = msoTrue
+        .ChartArea.Format.Line.ForeColor.ObjectThemeColor = msoThemeColorAccent1
+        .ChartArea.Format.Line.ForeColor.TintAndShade = 0
+        .ChartArea.Format.Line.ForeColor.Brightness = -0.5
+        .ChartArea.Format.Line.Weight = 2
+        .ChartArea.Format.Line.Transparency = 0
+        .Axes(xlValue).MajorGridlines.Delete
+        .Axes(xlValue).MinorGridlines.Delete
+        .Axes(xlCategory).MinorGridlines.Delete
+        .Axes(xlCategory).MajorGridlines.Delete
+            Do Until .SeriesCollection.Count = 0
+                .SeriesCollection(1).Delete
+            Loop
+    End With
+    
+Application.ScreenUpdating = True
+
+End Sub
+
+Sub Option_Values_Greeks_BSM()
+
+Application.ScreenUpdating = False
+
+'General variables
+Dim ws As Worksheet
+
+'Stock parameter variables
+Dim spotPrice As Double, volatility As Double
+
+'Array variables
+Dim callOptionResults() As Double, putOptionResults() As Double
+
+'Option parameter variables
+Dim strikePrice As Single, maturity As Single, interestRateD As Single, dividendYield As Single, ert As Double, _
+radj As Double, dOne As Double, NdOne As Double, NmdOne As Double, callOpt As Double, putOpt As Double, _
+dTwo As Double, NmdTwo As Double, NdTwo As Double, NpdOne As Double, expDay As Integer, eqt As Double, _
+interestRateF As Double
+        
+'''Assign values to general variables
+Set ws = Worksheets("Monte Carlo")
+
+'''Assign values to stock parameter variables
+spotPrice = ws.Range("B4").value
+volatility = ws.Range("B7").value
+
+'''Assign values to option parameter variables
+strikePrice = ws.Range("B13").value
+maturity = ws.Range("B14").value
+interestRateD = ws.Range("B15").value
+interestRateF = ws.Range("B16").value
+
+'''Option (Call/Put) calculations i.e. Black Scholes Model (intermediate variables)
+radj = (interestRateD - interestRateF + 0.5 * volatility ^ 2)
+eqt = Exp(-interestRateF * maturity)
+ert = Exp(-interestRateD * maturity)
+dOne = (Log(spotPrice / strikePrice) + radj * maturity) / (volatility * Sqr(maturity))
+NdOne = WorksheetFunction.NormSDist(dOne)
+NmdOne = 1 - NdOne
+dTwo = dOne - (volatility * Sqr(maturity))
+NdTwo = WorksheetFunction.NormSDist(dTwo)
+NmdTwo = 1 - NdTwo
+NpdOne = Exp(-(dOne ^ 2) / 2) / Sqr(2 * WorksheetFunction.Pi())
+
+ReDim callOptionResults(0, 3)
+ReDim putOptionResults(0, 3)
+
+'''Call option greeks
+    'BSM value of call option
+    callOptionResults(0, 0) = spotPrice * eqt * NdOne - strikePrice * ert * NdTwo
+    'Delta greek option result
+    callOptionResults(0, 1) = eqt * NdOne
+    'Gamma greek option result
+    callOptionResults(0, 2) = (NpdOne * eqt) / (spotPrice * volatility * Sqr(maturity))
+    'Vega greek option result
+    callOptionResults(0, 3) = spotPrice * eqt * Sqr(maturity) * NpdOne
+    
+'''Put option greeks
+    'BSM value of put option
+    putOptionResults(0, 0) = callOptionResults(0, 0) + strikePrice * ert - spotPrice * eqt
+    'Delta greek option result
+    putOptionResults(0, 1) = eqt * (NdOne - 1)
+    'Gamma greek option result
+    putOptionResults(0, 2) = NpdOne * eqt / (spotPrice * volatility * Sqr(maturity))
+    'Vega greek option result
+    putOptionResults(0, 3) = spotPrice * eqt * Sqr(maturity) * NpdOne
+    
+ws.Range("B28" & ":" & "B" & 31).value = WorksheetFunction.Transpose(callOptionResults)
+ws.Range("C28" & ":" & "C" & 31).value = WorksheetFunction.Transpose(putOptionResults)
+        
+Application.ScreenUpdating = True
+
+End Sub
